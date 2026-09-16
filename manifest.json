@@ -1,0 +1,78 @@
+{
+  "schemaVersion": 1,
+  "id": "io.github.sykesthelord.bar-drawer",
+  "name": "Bar Drawer",
+  "version": "1.0.0",
+  "author": "sykesthelord",
+  "license": "MIT",
+  "description": "A bar button that holds other bar widgets, either in a drop-down shelf or in an inline reveal, so the bar only shows what you pin to it.",
+  "kinds": ["bar-widget"],
+  "entryPoints": {
+    "barWidget": "Drawer.qml"
+  },
+  "barWidget": {
+    "displayName": "Drawer",
+    "description": "Groups bar widgets behind one button. Click (or hover) opens a shelf under the bar, or slides the widgets out inside the bar. Fill it with omarchy-bar-drawer add <widget-id>.",
+    "category": "Layout",
+    "aliases": ["drawer", "dropdown", "group", "overflow", "hide", "folder"],
+    "allowMultiple": true,
+    "defaultSection": "right",
+    "defaults": {
+      "mode": "dropdown",
+      "trigger": "click",
+      "columns": 0,
+      "icon": "",
+      "label": "",
+      "tooltip": "",
+      "items": []
+    },
+    "schema": [
+      {
+        "key": "mode",
+        "type": "enum",
+        "label": "Style",
+        "options": ["dropdown", "inline"],
+        "defaultValue": "dropdown",
+        "description": "dropdown opens a shelf beside the bar; inline slides the widgets out inside the bar itself."
+      },
+      {
+        "key": "trigger",
+        "type": "enum",
+        "label": "Open on",
+        "options": ["click", "hover"],
+        "defaultValue": "click"
+      },
+      {
+        "key": "columns",
+        "type": "integer",
+        "label": "Widgets per row",
+        "min": 0,
+        "max": 12,
+        "step": 1,
+        "defaultValue": 0,
+        "description": "Dropdown only. 0 keeps every widget on one row (one column on a vertical bar)."
+      },
+      {
+        "key": "icon",
+        "type": "string",
+        "label": "Icon",
+        "defaultValue": "",
+        "description": "Glyph for the button. Leave empty for a chevron that points away from the bar."
+      },
+      {
+        "key": "label",
+        "type": "string",
+        "label": "Label",
+        "defaultValue": "",
+        "description": "Optional text shown after the icon."
+      },
+      {
+        "key": "tooltip",
+        "type": "string",
+        "label": "Tooltip",
+        "defaultValue": "",
+        "description": "Leave empty to show how many widgets the drawer holds."
+      }
+    ]
+  }
+}

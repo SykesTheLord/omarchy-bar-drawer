@@ -1,0 +1,186 @@
+#!/bin/bash
+
+# Move Omarchy bar widgets into and out of a bar drawer.
+#
+# A widget inside a drawer is not in bar.layout, so this also keeps a
+# { "id": ... } entry for it in plugins[]: that is what keeps an installed
+# plugin enabled (and its bar-widget component loaded), and it is where the
+# widget's own settings live while it is in the drawer.
+
+# The jq programs are single-quoted on purpose: $drawer, $w, etc. are jq
+# variables passed with --arg, not shell expansions.
+# shellcheck disable=SC2016
+
+set -euo pipefail
+
+DRAWER_ID="io.github.sykesthelord.bar-drawer"
+CONFIG="${OMARCHY_SHELL_CONFIG:-$HOME/.config/omarchy/shell.json}"
+PLUGINS_DIR="${OMARCHY_PLUGINS_DIR:-$HOME/.config/omarchy/plugins}"
+
+usage() {
+  cat <<USAGE
+Usage:
+  omarchy-bar-drawer list
+  omarchy-bar-drawer add <widget-id> [--drawer N]
+  omarchy-bar-drawer remove <widget-id> [--section left|center|right]
+
+  list     Show every drawer on the bar and what it holds.
+  add      Take <widget-id> off the bar, keeping its settings, and put it in
+           drawer N (0-based, counted left to right; default 0).
+  remove   Take <widget-id> out of its drawer and put it back on the bar just
+           before that drawer, or at the end of --section.
+
+Add a drawer to the bar first with: omarchy plugin enable $DRAWER_ID
+USAGE
+}
+
+die() {
+  echo "omarchy-bar-drawer: $*" >&2
+  exit 1
+}
+
+# Shared jq definitions: entry ids and drawer locations in bar order.
+PRELUDE='
+  def eid: if type == "string" then . else (.id // "") end;
+  def drawers: . as $root
+    | [ ("left", "center", "right") as $s
+        | ($root.bar.layout[$s] // []) | to_entries[]
+        | select(.value | eid == $drawer)
+        | { section: $s, index: .key } ];
+  def items($d): (.bar.layout[$d.section][$d.index] | if type == "object" then (.items // []) else [] end);
+'
+
+write_config() {
+  local program=$1
+  shift
+  local tmp
+  tmp=$(mktemp "${CONFIG}.drawer.XXXXXX")
+  if ! jq --arg drawer "$DRAWER_ID" "$@" "$PRELUDE $program" "$CONFIG" >"$tmp"; then
+    rm -f "$tmp"
+    exit 1
+  fi
+  cp -p "$CONFIG" "$CONFIG.bak.$(date +%s)"
+  mv "$tmp" "$CONFIG"
+  if [[ -z ${OMARCHY_BAR_DRAWER_NO_RELOAD:-} ]]; then
+    omarchy-shell shell reloadConfig >/dev/null 2>&1 || true
+  fi
+}
+
+cmd_list() {
+  jq -r --arg drawer "$DRAWER_ID" "$PRELUDE"'
+    drawers as $d
+    | if ($d | length) == 0 then
+        "No drawers on the bar. Add one with: omarchy plugin enable \($drawer)"
+      else
+        . as $root
+        | $d | to_entries[]
+        | .value as $v
+        | "drawer \(.key)  (\($v.section) section, position \($v.index))\n"
+          + ([$root | items($v)[] | "  - " + eid] | if length == 0 then "  (empty)" else join("\n") end)
+      end
+  ' "$CONFIG"
+}
+
+cmd_add() {
+  local widget=$1 drawer_index=$2
+  [[ $widget != "$DRAWER_ID" ]] || die "a drawer cannot go inside a drawer"
+
+  write_config '
+    . as $root
+    | drawers as $d
+    | if ($d | length) <= $n then
+        error("no drawer #\($n) on the bar (found \($d | length)); add one with: omarchy plugin enable \($drawer)")
+      else . end
+    | if ([$d[] as $x | $root | items($x)[] | eid] | index($w)) != null then
+        error("\($w) is already in a drawer")
+      else . end
+    | ([.bar.layout[]?[]? | select(eid == $w)] | .[0]) as $prev
+    | (if ($prev | type) == "object" then ($prev | del(.id)) else {} end) as $settings
+    | .bar.layout |= with_entries(.value |= map(select(eid != $w)))
+    | $d[$n] as $t
+    | .bar.layout[$t.section][$t.index].items = (items($t) + [$w])
+    | .plugins = (.plugins // [])
+    | if (.plugins | map(eid) | index($w)) != null then
+        .plugins |= map(if eid == $w then (. + $settings) else . end)
+      else
+        .plugins += [{ id: $w } + $settings]
+      end
+  ' --arg w "$widget" --argjson n "$drawer_index"
+
+  echo "Moved $widget into drawer $drawer_index."
+}
+
+cmd_remove() {
+  local widget=$1 section=$2 keep_stub=false
+  local manifest="$PLUGINS_DIR/$widget/manifest.json"
+
+  # Keep the plugins[] entry for installed plugins that also ship a service,
+  # panel, overlay, or menu: those may need it for reasons beyond the bar.
+  if [[ -f $manifest ]] && jq -e '[.kinds[]? | select(. != "bar-widget")] | length > 0' "$manifest" >/dev/null 2>&1; then
+    keep_stub=true
+  fi
+
+  write_config '
+    . as $root
+    | [drawers[] | select(. as $x | $root | items($x) | map(eid) | index($w) != null)] as $holders
+    | if ($holders | length) == 0 then error("\($w) is not in a drawer") else . end
+    | $holders[0] as $h
+    | ([(.plugins // [])[] | select(eid == $w)] | .[0]) as $stub
+    | (if ($stub | type) == "object" then $stub else { id: $w } end) as $entry
+    | reduce $holders[] as $x (.; .bar.layout[$x.section][$x.index].items |= map(select(eid != $w)))
+    | if $keep then . else .plugins = ((.plugins // []) | map(select(eid != $w))) end
+    | if $section == "" then
+        .bar.layout[$h.section] |= (.[0:$h.index] + [$entry] + .[$h.index:])
+      else
+        .bar.layout[$section] = ((.bar.layout[$section] // []) + [$entry])
+      end
+  ' --arg w "$widget" --arg section "$section" --argjson keep "$keep_stub"
+
+  echo "Moved $widget back onto the bar."
+}
+
+[[ $# -gt 0 ]] || { usage; exit 1; }
+[[ $1 != -h && $1 != --help ]] || { usage; exit 0; }
+command -v jq >/dev/null || die "jq is required"
+[[ -f $CONFIG ]] || die "no shell config at $CONFIG"
+
+command=$1
+shift
+
+case $command in
+  list)
+    cmd_list
+    ;;
+  add)
+    [[ $# -ge 1 ]] || die "add needs a widget id"
+    widget=$1
+    shift
+    drawer_index=0
+    while [[ $# -gt 0 ]]; do
+      case $1 in
+        --drawer) drawer_index=${2:-}; shift 2 ;;
+        *) die "unknown option: $1" ;;
+      esac
+    done
+    [[ $drawer_index =~ ^[0-9]+$ ]] || die "--drawer takes a number"
+    cmd_add "$widget" "$drawer_index"
+    ;;
+  remove)
+    [[ $# -ge 1 ]] || die "remove needs a widget id"
+    widget=$1
+    shift
+    section=""
+    while [[ $# -gt 0 ]]; do
+      case $1 in
+        --section) section=${2:-}; shift 2 ;;
+        *) die "unknown option: $1" ;;
+      esac
+    done
+    [[ -z $section || $section =~ ^(left|center|right)$ ]] || die "--section must be left, center, or right"
+    cmd_remove "$widget" "$section"
+    ;;
+  *)
+    usage
+    exit 1
+    ;;
+esac
