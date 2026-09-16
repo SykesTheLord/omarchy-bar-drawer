@@ -96,9 +96,11 @@ cmd_add() {
       else . end
     | ([.bar.layout[]?[]? | select(eid == $w)] | .[0]) as $prev
     | (if ($prev | type) == "object" then ($prev | del(.id)) else {} end) as $settings
-    | .bar.layout |= with_entries(.value |= map(select(eid != $w)))
     | $d[$n] as $t
-    | .bar.layout[$t.section][$t.index].items = (items($t) + [$w])
+    | ($d | map(select(.section == $t.section)) | index($t)) as $rank
+    | .bar.layout |= with_entries(.value |= map(select(eid != $w)))
+    | ((.bar.layout[$t.section] // []) | to_entries | map(select(.value | eid == $drawer)) | .[$rank].key) as $i
+    | .bar.layout[$t.section][$i].items = (items({section: $t.section, index: $i}) + [$w])
     | .plugins = (.plugins // [])
     | if (.plugins | map(eid) | index($w)) != null then
         .plugins |= map(if eid == $w then (. + $settings) else . end)
