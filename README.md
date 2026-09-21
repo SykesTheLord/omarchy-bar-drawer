@@ -25,6 +25,16 @@ Move it like any other widget:
 omarchy bar move io.github.sykesthelord.bar-drawer --section right --index 0
 ```
 
+## Uninstall
+
+```bash
+omarchy plugin remove io.github.sykesthelord.bar-drawer
+rm -f ~/.local/bin/omarchy-bar-drawer   # only if you used --link-cli
+```
+
+If you pinned the drawer or moved widgets into it, take those out first with
+`omarchy-bar-drawer remove <widget-id>` so they return to the bar.
+
 ## Filling a drawer
 
 ```bash
