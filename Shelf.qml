@@ -9,11 +9,9 @@ import "DrawerModel.js" as Model
 // Layer-shell window that shows a drawer's widgets as a second strip beside
 // the bar.
 //
-// The window deliberately spans from the screen edge across the bar. Most
-// widget panels are KeyboardPanels, which place themselves using the height
-// (or width) of their anchor's window as "the bar", so a child's panel then
-// opens beyond this strip instead of on top of it. Everything but the card is
-// masked out, so the bar underneath stays clickable.
+// The window spans from the screen edge across the bar, and the card sits
+// just past the bar's thickness. Everything but the card is masked out, so
+// the bar underneath stays clickable.
 PanelWindow {
   id: shelf
 
@@ -35,7 +33,11 @@ PanelWindow {
   readonly property var barWindow: anchorItem ? anchorItem.QsWindow.window : null
   readonly property string barPos: host ? String(host.position || "top") : "top"
   readonly property bool vertical: barPos === "left" || barPos === "right"
-  readonly property real barExtent: barWindow ? (vertical ? barWindow.width : barWindow.height) : 0
+  // The bar window spans its whole screen, so its size says nothing about
+  // the strip. Read the thickness the way KeyboardPanel does (notch included).
+  readonly property real barExtent: !host ? 0
+    : (typeof host.barSizeFor === "function" && barWindow && barWindow.screen
+      ? host.barSizeFor(barWindow.screen.name) : host.barSize)
   readonly property real cardWidth: Math.ceil(contentWidth + card.contentLeftInset + card.contentRightInset)
   readonly property real cardHeight: Math.ceil(contentHeight + card.contentTopInset + card.contentBottomInset)
 
